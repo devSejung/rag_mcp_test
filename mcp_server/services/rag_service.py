@@ -24,10 +24,8 @@ class RAGService:
         # 2. Search (Retrieval) - Fetch more children to find diverse parents using Hybrid Search
         limit = top_k * 3
         
-        dense_task = self.repository.search_dense(query_vector, limit=limit, filter_component=filter_component)
-        sparse_task = self.repository.search_sparse(sparse_indices[0], sparse_values[0], limit=limit, filter_component=filter_component)
-        
-        dense_results, sparse_results = await asyncio.gather(dense_task, sparse_task)
+        dense_results = self.repository.search_dense(query_vector, limit=limit, filter_component=filter_component)
+        sparse_results = self.repository.search_sparse(sparse_indices[0], sparse_values[0], limit=limit, filter_component=filter_component)
         
         # Reciprocal Rank Fusion (RRF)
         rrf_k = 60
@@ -55,7 +53,7 @@ class RAGService:
                        for res in search_results 
                        if res["payload"].get("parent_key") or res["payload"].get("key")]
         
-        parent_docs_payloads = await self.repository.get_parents_by_keys(parent_keys)
+        parent_docs_payloads = self.repository.get_parents_by_keys(parent_keys)
         
         # Fallback if no parents found (e.g. using older single-chunk data)
         if not parent_docs_payloads:
