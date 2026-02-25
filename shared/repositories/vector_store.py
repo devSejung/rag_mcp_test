@@ -1,4 +1,4 @@
-from qdrant_client import QdrantClient, models
+from qdrant_client import AsyncQdrantClient, models
 from typing import List, Dict, Any, Optional
 from shared.config import settings
 import uuid
@@ -9,28 +9,20 @@ logger = logging.getLogger(__name__)
 class VectorRepository:
     """Repository for interacting with Qdrant Vector Store."""
     
-    _client_instance: Optional[QdrantClient] = None
-    
     def __init__(self, collection_name: str):
-        if VectorRepository._client_instance is None:
-            if settings.QDRANT_URL:
-                VectorRepository._client_instance = QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
-            else:
-                VectorRepository._client_instance = QdrantClient(path=settings.QDRANT_LOCAL_PATH)
-        
-        self.client = VectorRepository._client_instance
+        self.client = AsyncQdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
         self.collection_name = collection_name
         self.dense_dim = 1024 # Assumed BAAI dimension, adjust if necessary
         
-    def initialize_collection(self):
+    async def initialize_collection(self):
         """Drops and recreates collection with Hybrid Search schema (Dense + Sparse)."""
         logger.warning(f"Recreating collection {self.collection_name} for Hybrid Search Schema!!!")
         try:
-            self.client.delete_collection(collection_name=self.collection_name)
+            await self.client.delete_collection(collection_name=self.collection_name)
         except Exception:
             pass
             
-        self.client.create_collection(
+        await self.client.create_collection(
             collection_name=self.collection_name,
             vectors_config={"dense": models.VectorParams(size=self.dense_dim, distance=models.Distance.COSINE)},
             sparse_vectors_config={
@@ -39,7 +31,7 @@ class VectorRepository:
         )
         logger.info(f"Collection {self.collection_name} ready.")
 
-    def search_dense(self, dense_vector: List[float], limit: int = 10, filter_component: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def search_dense(self, dense_vector: List[float], limit: int = 10, filter_component: Optional[str] = None) -> List[Dict[str, Any]]:
         """Search using Dense vectors."""
         qdrant_filter = None
         if filter_component:
@@ -52,7 +44,7 @@ class VectorRepository:
                 ]
             )
 
-        results = self.client.search(
+        results = await self.client.search(
             collection_name=self.collection_name,
             query_vector=("dense", dense_vector),
             limit=limit,
@@ -69,7 +61,7 @@ class VectorRepository:
             for hit in results
         ]
 
-    def search_sparse(self, sparse_indices: List[int], sparse_values: List[float], limit: int = 10, filter_component: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def search_sparse(self, sparse_indices: List[int], sparse_values: List[float], limit: int = 10, filter_component: Optional[str] = None) -> List[Dict[str, Any]]:
         """Search using Sparse vectors (BM25 custom IDF)."""
         qdrant_filter = None
         if filter_component:
@@ -82,7 +74,7 @@ class VectorRepository:
                 ]
             )
 
-        results = self.client.search(
+        results = await self.client.search(
             collection_name=self.collection_name,
             query_vector=models.NamedSparseVector(
                 name="sparse",
@@ -105,7 +97,7 @@ class VectorRepository:
             for hit in results
         ]
 
-    def upsert_documents(self, documents: List[Dict[str, Any]], vectors: List[List[float]], sparse_indices: Optional[List[List[int]]] = None, sparse_values: Optional[List[List[float]]] = None):
+    async def upsert_documents(self, documents: List[Dict[str, Any]], vectors: List[List[float]], sparse_indices: Optional[List[List[int]]] = None, sparse_values: Optional[List[List[float]]] = None):
         """Upsert documents with their named vectors."""
         points = []
         for i, doc in enumerate(documents):
@@ -128,12 +120,12 @@ class VectorRepository:
                 )
             )
         
-        self.client.upsert(
+        await self.client.upsert(
             collection_name=self.collection_name,
             points=points
         )
 
-    def upsert_parent_child(self, parent_doc: Dict[str, Any], child_documents: List[Dict[str, Any]], child_vectors: List[List[float]], child_sparse_indices: Optional[List[List[int]]] = None, child_sparse_values: Optional[List[List[float]]] = None):
+    async def upsert_parent_child(self, parent_doc: Dict[str, Any], child_documents: List[Dict[str, Any]], child_vectors: List[List[float]], child_sparse_indices: Optional[List[List[int]]] = None, child_sparse_values: Optional[List[List[float]]] = None):
         """
         Upsert a parent document and its child chunks using named vectors.
         """
@@ -181,12 +173,12 @@ class VectorRepository:
                 )
             )
             
-        self.client.upsert(
+        await self.client.upsert(
             collection_name=self.collection_name,
             points=points
         )
         
-    def get_parents_by_keys(self, parent_keys: List[str]) -> List[Dict[str, Any]]:
+    async def get_parents_by_keys(self, parent_keys: List[str]) -> List[Dict[str, Any]]:
         """Retrieve full parent documents sequentially based on their original keys."""
         # Convert string keys to their deterministic parent UUIDs
         parent_uuids = [str(uuid.uuid5(uuid.NAMESPACE_URL, "parent_" + key)) for key in parent_keys]
@@ -197,7 +189,7 @@ class VectorRepository:
             return []
             
         # Retrieve from Qdrant by IDs
-        records, _ = self.client.scroll(
+        records, _ = await self.client.scroll(
             collection_name=self.collection_name,
             scroll_filter=models.Filter(
                 must=[
@@ -211,9 +203,9 @@ class VectorRepository:
         
         return [record.payload for record in records if record.payload]
 
-    def get_all_keys(self, source: str) -> set:
+    async def get_all_keys(self, source: str) -> set:
         """Retrieve all parent keys for a specific source to perform deletion scrub."""
-        records, _ = self.client.scroll(
+        records, _ = await self.client.scroll(
             collection_name=self.collection_name,
             scroll_filter=models.Filter(
                 must=[
@@ -233,7 +225,7 @@ class VectorRepository:
         )
         return {record.payload.get("key") for record in records if record.payload and record.payload.get("key")}
 
-    def delete_by_keys(self, keys: List[str]):
+    async def delete_by_keys(self, keys: List[str]):
         """Delete complete parent and child chunks by parent original keys."""
         if not keys:
             return
@@ -241,7 +233,7 @@ class VectorRepository:
         parent_uuids = [str(uuid.uuid5(uuid.NAMESPACE_URL, "parent_" + key)) for key in keys]
         
         # 1. Delete Parents
-        self.client.delete(
+        await self.client.delete(
             collection_name=self.collection_name,
             points_selector=models.PointIdsList(
                 points=parent_uuids
@@ -249,7 +241,7 @@ class VectorRepository:
         )
         
         # 2. Delete Children
-        self.client.delete(
+        await self.client.delete(
             collection_name=self.collection_name,
             points_selector=models.Filter(
                 must=[

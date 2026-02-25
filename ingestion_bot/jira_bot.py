@@ -96,7 +96,7 @@ class JiraBot:
                         payload["doc_id"] = chunk["id"]
                         payloads.append(payload)
                     
-                    self.vector_repo.upsert_parent_child(
+                    await self.vector_repo.upsert_parent_child(
                         parent_doc=parent_doc, 
                         child_documents=payloads, 
                         child_vectors=vectors,
@@ -122,12 +122,12 @@ class JiraBot:
         logger.info("Starting Jira Deletion Scrub Cycle...")
         try:
             source_keys = self.jira_client.fetch_all_active_keys()
-            qdrant_keys = self.vector_repo.get_all_keys(source="jira")
+            qdrant_keys = await self.vector_repo.get_all_keys(source="jira")
             
             keys_to_delete = list(qdrant_keys - source_keys)
             if keys_to_delete:
                 logger.info(f"Found {len(keys_to_delete)} deleted or ghost issues. Removing from Vector DB...")
-                self.vector_repo.delete_by_keys(keys_to_delete)
+                await self.vector_repo.delete_by_keys(keys_to_delete)
                 logger.info("Deletion scrub completed.")
             else:
                 logger.info("No ghost issues found in Vector DB.")

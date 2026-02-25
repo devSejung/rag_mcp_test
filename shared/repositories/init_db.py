@@ -5,16 +5,16 @@ from shared.repositories.vector_store import JiraRepository, ConfluenceRepositor
 
 logging.basicConfig(level=logging.INFO)
 
-def main():
+async def main():
     print("Initializing Qdrant Collections for Hybrid Search...")
     
     jira_repo = JiraRepository()
-    jira_repo.initialize_collection()
+    await jira_repo.initialize_collection()
     
     conf_repo = ConfluenceRepository()
-    conf_repo.initialize_collection()
+    await conf_repo.initialize_collection()
     
     print("Successfully recreated collections with Dense and Sparse configurations.")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

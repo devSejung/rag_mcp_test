@@ -12,8 +12,7 @@ class Settings(BaseSettings):
     GENERATION_MODEL: str = "qwen2.5-8b-instruct"
     
     # Vector DB (Qdrant)
-    QDRANT_URL: Optional[str] = None # Set to None for local file mode
-    QDRANT_LOCAL_PATH: str = "qdrant_storage"
+    QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: Optional[str] = None
     
     # Collection Names
